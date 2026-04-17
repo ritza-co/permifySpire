@@ -1,0 +1,141 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+static_resources:
+  listeners:
+    - name: ingressListener
+      address:
+        socket_address:
+          address: 0.0.0.0
+          port_value: 8443
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                tls_certificate_sds_secret_configs:
+                  - name: "spiffe://example.org/audit"
+                    sds_config:
+                      api_config_source:
+                        api_type: GRPC
+                        transport_api_version: V3
+                        grpc_services:
+                          - google_grpc:
+                              stat_prefix: spire
+                              target_uri: "unix:///opt/spire/sockets/agent.sock"
+                validation_context_sds_secret_config:
+                  name: "spiffe://example.org/audit"
+                  sds_config:
+                    api_config_source:
+                      api_type: GRPC
+                      transport_api_version: V3
+                      grpc_services:
+                        - google_grpc:
+                            stat_prefix: spire
+                            target_uri: "unix:///opt/spire/sockets/agent.sock"
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingressHttp
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+                route_config:
+                  name: localRoute
+                  virtual_hosts:
+                    - name: localService
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                          route:
+                            cluster: localApp
+    - name: egressListener
+      address:
+        socket_address:
+          address: 127.0.0.1
+          port_value: 8001
+      filter_chains:
+        - filters:
+          - name: envoy.filters.network.http_connection_manager
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+              stat_prefix: egressHttp
+              http_filters:
+                - name: envoy.filters.http.lua
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                    inline_code: |
+                      function envoy_on_request(request_handle)
+                        request_handle:headers():replace("spiffeId", "spiffe://example.org/audit")
+                      end
+                - name: envoy.filters.http.router
+                  typed_config:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+              route_config:
+                name: egressRoute
+                virtual_hosts:
+                  - name: egressService
+                    domains: ["*"]
+                    routes:
+                      - match:
+                          prefix: "/"
+                        route:
+                          cluster: paymentsCluster
+                          host_rewrite_literal: "payments"
+  clusters:
+    - name: localApp
+      type: STATIC
+      load_assignment:
+        cluster_name: localApp
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: 127.0.0.1
+                      port_value: 3000
+    - name: paymentsCluster
+      type: STRICT_DNS
+      lb_policy: ROUND_ROBIN
+      load_assignment:
+        cluster_name: paymentsCluster
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address:
+                      address: payments
+                      port_value: 8443
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          sni: "payments"
+          common_tls_context:
+            tls_certificate_sds_secret_configs:
+              - name: "spiffe://example.org/audit"
+                sds_config:
+                  api_config_source:
+                    api_type: GRPC
+                    transport_api_version: V3
+                    grpc_services:
+                      - google_grpc:
+                          stat_prefix: spire
+                          target_uri: "unix:///opt/spire/sockets/agent.sock"
+            validation_context_sds_secret_config:
+              name: "spiffe://example.org/audit"
+              sds_config:
+                api_config_source:
+                  api_type: GRPC
+                  transport_api_version: V3
+                  grpc_services:
+                    - google_grpc:
+                        stat_prefix: spire
+                        target_uri: "unix:///opt/spire/sockets/agent.sock"

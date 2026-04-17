@@ -1,0 +1,286 @@
+networks:
+  spireNetwork:
+    driver: bridge
+
+volumes:
+  serverBin:
+  agentBin:
+
+services:
+
+# SPIRE SERVER ---------------------------------------------------------
+  spireServer:
+    image: ghcr.io/spiffe/spire-server:1.14.4
+    container_name: spireServer
+    volumes:
+      - ./config/spireServer.conf:/etc/spire/config/spireServer.conf:ro
+      - ./sockets:/opt/spire/sockets
+      - serverBin:/opt/spire/bin
+    command: ["-config", "/etc/spire/config/spireServer.conf"]
+    networks:
+      - spireNetwork
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-server", "healthcheck", "-socketPath", "/opt/spire/sockets/registration.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  spireServerInitialize:
+    image: denoland/deno:alpine-2.7.11
+    container_name: spireServerInitialize
+    volumes:
+      - serverBin:/opt/spire/bin:RO
+      - ./sockets:/opt/spire/sockets
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        /opt/spire/bin/spire-server token generate \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/agent \
+          | awk '{print $$2}' > /opt/spire/sockets/agent_token
+
+        /opt/spire/bin/spire-server entry create \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/agent \
+          -selector join_token:unused \
+          -node || true
+
+        /opt/spire/bin/spire-server entry create \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/payments \
+          -parentID spiffe://example.org/agent \
+          -selector docker:label:app:payments || true
+
+        /opt/spire/bin/spire-server entry create \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/orders \
+          -parentID spiffe://example.org/agent \
+          -selector docker:label:app:orders || true
+
+        /opt/spire/bin/spire-server entry create \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/audit \
+          -parentID spiffe://example.org/agent \
+          -selector docker:label:app:audit || true
+
+        /opt/spire/bin/spire-server entry create \
+          -socketPath /opt/spire/sockets/registration.sock \
+          -spiffeID spiffe://example.org/permify \
+          -parentID spiffe://example.org/agent \
+          -selector docker:label:app:permify || true
+    depends_on:
+      spireServer:
+        condition: service_healthy
+    networks:
+      - spireNetwork
+
+# SPIRE AGENT ---------------------------------------------------------
+
+  spireAgent:
+    image: ghcr.io/spiffe/spire-agent:1.14.4
+    container_name: spireAgent
+    labels:
+      app: "agent"
+    entrypoint: ["/opt/spire/bin/spire-agent"]
+    command: ["run", "-config", "/etc/spire/agent.conf", "-joinTokenFile", "/opt/spire/sockets/agent_token"]
+    volumes:
+      - ./config/spireAgent.conf:/etc/spire/agent.conf:ro
+      - ./sockets:/opt/spire/sockets
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - agentBin:/opt/spire/bin
+    pid: host
+    depends_on:
+      spireServer:
+        condition: service_healthy
+      spireServerInitialize:
+        condition: service_completed_successfully
+    networks:
+      - spireNetwork
+    healthcheck:
+      test: ["CMD", "/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/opt/spire/sockets/agent.sock"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+# PERMIFY ---------------------------------------------------------
+
+  permify:
+    image: ghcr.io/permify/permify:v1.6.8
+    container_name: permify
+    labels:
+      app: "permify"
+    entrypoint: ["/usr/local/bin/permify"]
+    command: ["serve", "--http-port", "3000"]
+    volumes:
+      - ./sockets:/opt/spire/sockets:ro
+      - agentBin:/opt/spire/bin:ro
+    networks:
+      - spireNetwork
+
+  permifyHealthcheck:
+    image: denoland/deno:alpine-2.7.11
+    container_name: permifyHealthcheck
+    network_mode: "service:permify"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          wget -q --spider http://localhost:3000/healthz && exit 0 || sleep 2
+        done
+    depends_on:
+      - permify
+
+  permifyInitialize:
+    image: denoland/deno:alpine-2.7.11
+    container_name: permifyInitialize
+    volumes:
+      - ./config/permifyInitialize.ts:/app/permifyInitialize.ts
+    working_dir: /app
+    command: sh -c "deno run --allow-net permifyInitialize.ts"
+    depends_on:
+      permifyHealthcheck:
+        condition: service_completed_successfully
+    networks:
+      - spireNetwork
+
+  permifyProxy:
+    image: envoyproxy/envoy:v1.37.2
+    container_name: permifyProxy
+    labels:
+      app: "permify"
+    volumes:
+      - ./config/envoyPermify.yml:/etc/envoy/envoy.yaml:ro
+      - ./sockets:/opt/spire/sockets:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "permify", "--service-cluster", "permify"]
+    network_mode: "service:permify"
+    depends_on:
+      spireAgent:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+
+# SERVICES ---------------------------------------------------------
+
+  payments:
+    image: denoland/deno:alpine-2.7.11
+    container_name: payments
+    labels:
+      app: "payments"
+    volumes:
+      - ./services:/app
+    working_dir: /app
+    command: sh -c "deno run --allow-net --allow-read --allow-env payments.ts"
+    environment:
+      - permifyUrl=http://localhost:8001
+    depends_on:
+      spireAgent:
+        condition: service_healthy
+      permifyHealthcheck:
+        condition: service_completed_successfully
+    networks:
+      - spireNetwork
+
+  paymentsProxy:
+    image: envoyproxy/envoy:v1.37.2
+    container_name: paymentsProxy
+    labels:
+      app: "payments"
+    volumes:
+      - ./config/envoyPayments.yml:/etc/envoy/envoy.yaml:ro
+      - ./sockets:/opt/spire/sockets
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "payments", "--service-cluster", "payments"]
+    network_mode: "service:payments"
+    depends_on:
+      payments:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+
+  orders:
+    image: denoland/deno:alpine-2.7.11
+    container_name: orders
+    labels:
+      app: "orders"
+    volumes:
+      - ./services:/app
+    working_dir: /app
+    command: sh -c "deno run --allow-net --allow-read --allow-env orders.ts"
+    environment:
+      - paymentsUrl=http://localhost:8001
+    ports:
+      - "7773:3000"
+    depends_on:
+      spireAgent:
+        condition: service_healthy
+      permifyHealthcheck:
+        condition: service_completed_successfully
+    networks:
+      - spireNetwork
+
+  ordersProxy:
+    image: envoyproxy/envoy:v1.37.2
+    container_name: ordersProxy
+    labels:
+      app: "orders"
+      component: "proxy"
+    volumes:
+      - ./config/envoyOrders.yml:/etc/envoy/envoy.yaml:ro
+      - ./sockets:/opt/spire/sockets
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "orders", "--service-cluster", "orders"]
+    network_mode: "service:orders"
+    depends_on:
+      orders:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
+
+  audit:
+    image: denoland/deno:alpine-2.7.11
+    container_name: audit
+    labels:
+      app: "audit"
+    volumes:
+      - ./services:/app
+    working_dir: /app
+    command: sh -c "deno run --allow-net --allow-read --allow-env audit.ts"
+    environment:
+      - paymentsUrl=http://localhost:8001
+    ports:
+      - "7775:3000"
+    depends_on:
+      spireAgent:
+        condition: service_healthy
+      permifyHealthcheck:
+        condition: service_completed_successfully
+    networks:
+      - spireNetwork
+
+  auditProxy:
+    image: envoyproxy/envoy:v1.37.2
+    container_name: auditProxy
+    labels:
+      app: "audit"
+    volumes:
+      - ./config/envoyAudit.yml:/etc/envoy/envoy.yaml:ro
+      - ./sockets:/opt/spire/sockets
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "audit", "--service-cluster", "audit"]
+    network_mode: "service:audit"
+    depends_on:
+      audit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      interval: 2s
+      timeout: 1s
+      retries: 10
