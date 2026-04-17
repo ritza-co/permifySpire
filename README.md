@@ -4,8 +4,7 @@ This repository accompanies a guide to using SPIRE with Permify.
 
 You need Docker installed on your computer.
 
-- Open a terminal in repository directory.
-- Run
+- Open a terminal in this repository directory, and run:
   ```sh
   docker compose up
   ```
@@ -14,7 +13,7 @@ You need Docker installed on your computer.
   curl http://localhost:7773/order  # expected: allowed
   curl http://localhost:7775/audit  # expected: denied
   ```
-- To clean up, stop Docker, and run:
+- To clean up, stop Docker and run:
   ```sh
   docker compose down -v
   docker rmi ghcr.io/spiffe/spire-server:1.14.4
