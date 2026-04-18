@@ -106,9 +106,9 @@ services:
       retries: 5
 
 # end::a[]
-# tag::b[]
 
 # PERMIFY ---------------------------------------------------------
+# tag::b[]
 
   permify:
     image: ghcr.io/permify/permify:v1.6.8
@@ -170,10 +170,10 @@ services:
       retries: 10
 
 # end::b[]
-# tag::c[]
 
 
 # SERVICES ---------------------------------------------------------
+# tag::c[]
 
   payments:
     image: denoland/deno:alpine-2.7.11
