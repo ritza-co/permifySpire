@@ -1,3 +1,5 @@
+# tag::a[]
+
 networks:
   spireNetwork:
     driver: bridge
@@ -102,6 +104,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+# end::b[]
 
 # PERMIFY ---------------------------------------------------------
 
