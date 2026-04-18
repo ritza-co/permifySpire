@@ -10,8 +10,8 @@ You need Docker installed on your computer.
   ```
 - Once all containers are running, open a new terminal and run the commands below to test authentication and authorization from end to end:
   ```sh
-  curl http://localhost:7773/order  # expected: allowed
-  curl http://localhost:7775/audit  # expected: denied
+  curl http://localhost:7773/order  # allowed
+  curl http://localhost:7775/audit  # denied
   ```
 - To clean up, stop Docker and run:
   ```sh
