@@ -117,9 +117,9 @@ services:
       app: "permify"
     entrypoint: ["/usr/local/bin/permify"]
     command: ["serve", "--http-port", "3000"]
-    volumes:
-      - ./sockets:/opt/spire/sockets:ro
-      - agentBin:/opt/spire/bin:ro
+    # volumes:
+    #   - ./sockets:/opt/spire/sockets:ro
+      # - agentBin:/opt/spire/bin:ro
     networks:
       - spireNetwork
 
@@ -150,6 +150,9 @@ services:
     networks:
       - spireNetwork
 
+# end::b[]
+
+# tag::c[]
   permifyProxy:
     image: envoyproxy/envoy:v1.37.2
     container_name: permifyProxy
@@ -168,12 +171,10 @@ services:
       interval: 2s
       timeout: 1s
       retries: 10
-
-# end::b[]
-
+# end::c[]
 
 # SERVICES ---------------------------------------------------------
-# tag::c[]
+# tag::d[]
 
   payments:
     image: denoland/deno:alpine-2.7.11
@@ -193,6 +194,7 @@ services:
         condition: service_completed_successfully
     networks:
       - spireNetwork
+# end::d[]
 
   paymentsProxy:
     image: envoyproxy/envoy:v1.37.2
@@ -212,8 +214,6 @@ services:
       interval: 2s
       timeout: 1s
       retries: 10
-
-# end::c[]
 
   orders:
     image: denoland/deno:alpine-2.7.11
