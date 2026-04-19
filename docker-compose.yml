@@ -117,9 +117,6 @@ services:
       app: "permify"
     entrypoint: ["/usr/local/bin/permify"]
     command: ["serve", "--http-port", "3000"]
-    # volumes:
-    #   - ./sockets:/opt/spire/sockets:ro
-      # - agentBin:/opt/spire/bin:ro
     networks:
       - spireNetwork
 
