@@ -175,7 +175,7 @@ services:
       spireAgent:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -218,7 +218,7 @@ services:
       payments:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -259,7 +259,7 @@ services:
       orders:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -299,7 +299,7 @@ services:
       audit:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
