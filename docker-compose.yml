@@ -7,18 +7,29 @@ networks:
 volumes:
   serverBin:
   agentBin:
+  sockets:
 
 services:
 
 # SPIRE SERVER ---------------------------------------------------------
+  socketsInit:
+    image: busybox
+    container_name: socketsInit
+    volumes:
+      - sockets:/opt/spire/sockets
+    command: ["chmod", "777", "/opt/spire/sockets"]
+
   spireServer:
     image: ghcr.io/spiffe/spire-server:1.14.4
     container_name: spireServer
     volumes:
       - ./config/spireServer.conf:/etc/spire/config/spireServer.conf:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
       - serverBin:/opt/spire/bin
     command: ["-config", "/etc/spire/config/spireServer.conf"]
+    depends_on:
+      socketsInit:
+        condition: service_completed_successfully
     networks:
       - spireNetwork
     healthcheck:
@@ -32,7 +43,7 @@ services:
     container_name: spireServerInitialize
     volumes:
       - serverBin:/opt/spire/bin:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
     entrypoint: /bin/sh
     command:
       - -c
@@ -88,7 +99,7 @@ services:
     command: ["run", "-config", "/etc/spire/agent.conf", "-joinTokenFile", "/opt/spire/sockets/agent_token"]
     volumes:
       - ./config/spireAgent.conf:/etc/spire/agent.conf:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - agentBin:/opt/spire/bin
     pid: host
@@ -157,14 +168,14 @@ services:
       app: "permify"
     volumes:
       - ./config/envoyPermify.yml:/etc/envoy/envoy.yaml:ro
-      - ./sockets:/opt/spire/sockets:ro
+      - sockets:/opt/spire/sockets:ro
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "permify", "--service-cluster", "permify"]
     network_mode: "service:permify"
     depends_on:
       spireAgent:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -200,14 +211,14 @@ services:
       app: "payments"
     volumes:
       - ./config/envoyPayments.yml:/etc/envoy/envoy.yaml:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "payments", "--service-cluster", "payments"]
     network_mode: "service:payments"
     depends_on:
       payments:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -241,14 +252,14 @@ services:
       component: "proxy"
     volumes:
       - ./config/envoyOrders.yml:/etc/envoy/envoy.yaml:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "orders", "--service-cluster", "orders"]
     network_mode: "service:orders"
     depends_on:
       orders:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
@@ -281,14 +292,14 @@ services:
       app: "audit"
     volumes:
       - ./config/envoyAudit.yml:/etc/envoy/envoy.yaml:ro
-      - ./sockets:/opt/spire/sockets
+      - sockets:/opt/spire/sockets
     command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--service-node", "audit", "--service-cluster", "audit"]
     network_mode: "service:audit"
     depends_on:
       audit:
         condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9901/ready"]
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9901 && echo -e 'GET /ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
       interval: 2s
       timeout: 1s
       retries: 10
