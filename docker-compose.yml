@@ -15,9 +15,10 @@ services:
   createSocketsNamedVolumeWithCorrectPermissions:
     image: denoland/deno:alpine-2.7.11
     container_name: createSocketsNamedVolumeWithCorrectPermissions
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["chmod 777 /opt/spire/sockets"]
     volumes:
       - sockets:/opt/spire/sockets
-    command: ["chmod", "777", "/opt/spire/sockets"]
 
   spireServer:
     image: ghcr.io/spiffe/spire-server:1.14.4
